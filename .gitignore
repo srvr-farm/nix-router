@@ -1,0 +1,9 @@
+result
+result-*
+.direnv/
+api-key
+
+# Real secrets — copy the .example templates and fill these in on the
+# router itself; never commit the filled-in versions.
+secrets/ddclient.conf
+secrets/tailscale-authkey
