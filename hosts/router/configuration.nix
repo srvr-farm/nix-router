@@ -8,6 +8,7 @@
     ../../modules/ddns.nix
     ../../modules/ssh.nix
     ../../modules/srvr-farm-tools.nix
+    ../../modules/monitoring.nix
   ];
 
   # --- Boot / hardware ---------------------------------------------------

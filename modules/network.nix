@@ -57,8 +57,15 @@ in
   # perspective versus the box this replaces.
   # ---------------------------------------------------------------------
 
-  boot.kernelModules = [ "ixgbe" "sfc_siena" ];
+  boot.kernelModules = [ "ixgbe" "sfc_siena" "tcp_bbr" ];
   hardware.enableRedistributableFirmware = true;
+
+  # Always-on, plugged-in router with headroom to spare - trade the small
+  # power savings of dynamic frequency scaling for consistent low latency.
+  # `schedutil` (the default) is fast but still has ms-scale ramp-up
+  # lag from idle (800MHz) to full (4.1GHz) on bursty small-packet
+  # traffic, which matters for a box whose whole job is first-hop latency.
+  powerManagement.cpuFreqGovernor = "performance";
 
   networking.useDHCP = false;
   networking.useNetworkd = true;
@@ -73,6 +80,26 @@ in
     "net.ipv4.conf.all.accept_redirects" = 0;
     "net.ipv4.conf.all.send_redirects" = 0;
     "net.ipv6.conf.all.accept_redirects" = 0;
+
+    # BBR only affects sockets this box itself opens/accepts (SSH, DNS
+    # upstream queries, Tailscale, nix substitution, the iperf3 server
+    # below) - forwarded LAN<->WAN traffic is unaffected, since forwarding
+    # never touches the router's own TCP stack/congestion control. Still
+    # a straightforward win for admin responsiveness (SSH) and is what
+    # every modern router/CDN defaults to over cubic. tcp_bbr is loaded
+    # explicitly above since it's a module, not built in, on this kernel.
+    "net.ipv4.tcp_congestion_control" = "bbr";
+
+    # Defaults (208KB max) are conservative for a box with 10G NICs and
+    # 32GB RAM doing its own local transfers (iperf3 tests, SSH, nix
+    # fetches) - bumping the ceiling costs nothing idle (Linux still
+    # auto-tunes within it) and removes a throughput cap on those local
+    # connections. Doesn't affect the forwarding path either, same
+    # reasoning as tcp_congestion_control above.
+    "net.core.rmem_max" = 16777216;
+    "net.core.wmem_max" = 16777216;
+    "net.ipv4.tcp_rmem" = "4096 131072 16777216";
+    "net.ipv4.tcp_wmem" = "4096 16384 16777216";
   };
 
   systemd.network.enable = true;
