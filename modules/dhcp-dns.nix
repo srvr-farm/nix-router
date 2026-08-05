@@ -1,4 +1,4 @@
-{ ... }:
+{ lib, ... }:
 {
   # dnsmasq replaces OPNsense's dhcpd (on opt5/bridge0) + Unbound (with its
   # custom host overrides for the srvr.farm split-horizon DNS). OPNsense's
@@ -82,6 +82,19 @@
         "/chris.srvr.farm/10.0.0.10"
         "/memos.srvr.farm/10.0.0.10"
       ];
+    };
+  };
+
+  # DNS/DHCP for the whole LAN depends on this service - it must keep
+  # retrying forever, not give up. Without this, systemd's defaults
+  # (DefaultStartLimitBurst=5 within DefaultStartLimitIntervalSec=10s) stop
+  # restarting it after 5 failures in a 10s window; startLimitIntervalSec=0
+  # disables that rate limit entirely so it always retries.
+  systemd.services.dnsmasq = {
+    startLimitIntervalSec = 0;
+    serviceConfig = {
+      Restart = lib.mkForce "always";
+      RestartSec = 5;
     };
   };
 }
