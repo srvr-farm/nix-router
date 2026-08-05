@@ -42,6 +42,15 @@
         ];
       };
 
-      packages.${system}.iso = self.nixosConfigurations.installer.config.system.build.isoImage;
+      packages.${system} = {
+        iso = self.nixosConfigurations.installer.config.system.build.isoImage;
+
+        # Raw disk image of the *installed* router config (disko + configuration.nix
+        # baked in, no separate install step). Build then run the resulting script
+        # to produce a nixos-router.raw file, which can be `dd`'d straight onto the
+        # real disk. See MIGRATION.md's cutover runbook for the secrets-embedding
+        # invocation and the post-dd partition-growing step.
+        diskoImage = self.nixosConfigurations.router.config.system.build.diskoImagesScript;
+      };
     };
 }

@@ -3,6 +3,9 @@ result-*
 .direnv/
 api-key
 
+# diskoImage build output (~100G raw disk image) - never commit this
+*.raw
+
 # Real secrets — copy the .example templates and fill these in on the
 # router itself; never commit the filled-in versions.
 secrets/ddclient.conf

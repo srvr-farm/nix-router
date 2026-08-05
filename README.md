@@ -14,21 +14,26 @@ step-by-step cutover runbook.
 ```
 hosts/router/
   configuration.nix   # entrypoint, imports everything below
-  disko.nix            # disk partitioning (single SATA SSD)
+  disko.nix            # disk partitioning (dual SATA SSD, target = non-boot disk)
 modules/
-  network.nix          # interfaces, bridge, static route
-  firewall.nix          # nftables: NAT, port-forwards, trust model
+  network.nix          # interfaces, bridge, static route, NIC offload/RSS
+  firewall.nix          # nftables: NAT, port-forwards, trust model, flowtable
   dhcp-dns.nix           # dnsmasq: DHCP reservations + split-horizon DNS
   tailscale.nix          # subnet router + exit node
   ddns.nix                # Cloudflare dynamic DNS
-  ssh.nix                  # root SSH keys/password carried over
+  ssh.nix                  # root + mark users, passwordless sudo for mark
 secrets/
   ddclient.conf              # real Cloudflare tokens (gitignored)
   ddclient.conf.example      # safe-to-commit template
   tailscale-authkey.example  # instructions, not a real key
 ```
 
-Validated with `nix flake check` / `nix eval` via the `nixos/nix` Docker
-image (no local Nix install on the machine this was written on) - not yet
-boot-tested on the actual router hardware. See MIGRATION.md's "What I could
-not test" section before paving the disk.
+Currently targets a Supermicro X10SLH-N6-ST031 (`mcallan@10.0.0.129`) -
+see MIGRATION.md's "Hardware" section for the full port map and a real,
+unresolved hardware bug (5 of 6 X540 10G ports fail to probe under the
+stock kernel; the fix is believed but not yet confirmed on real hardware -
+verify at first boot). `nix flake check` and the actual `diskoImage` build
+(`nix build .#packages.x86_64-linux.diskoImage`, includes a full local
+kernel compile) both pass end to end; not yet boot-tested on the real
+hardware. See MIGRATION.md's "What I could not test" section before
+paving the disk.

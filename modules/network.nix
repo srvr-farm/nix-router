@@ -1,23 +1,48 @@
 { lib, ... }:
+let
+  # RxChannels/TxChannels/CombinedChannels enable RSS (multi-queue, one
+  # queue per core) so packet processing isn't serialized on one CPU;
+  # the *SegmentationOffload/*ChecksumOffload options push TSO/GSO/GRO and
+  # checksumming onto the NIC itself. Both ixgbe and sfc_siena support all
+  # of this in hardware - this is the offload story on generic 10G NICs
+  # (there's no SmartNIC-style hardware NAT offload available here); the
+  # software side of the story is the nftables flowtable in firewall.nix.
+  offload = {
+    TCPSegmentationOffload = true;
+    GenericSegmentationOffload = true;
+    LargeReceiveOffload = true;
+    ReceiveChecksumOffload = true;
+    TransmitChecksumOffload = true;
+    CombinedChannels = 8;
+  };
+in
 {
   # ---------------------------------------------------------------------
-  # Physical topology, translated from the OPNsense config:
+  # Physical topology - Supermicro X10SLH-N6-ST031 (Xeon E3-1281 v3, 32GB),
+  # replacing the original i7-8700 box. 8 usable 10G-capable ports:
   #
-  #   WAN   igc0    Intel I226-V      02:76:c6:00:b1:b3   DHCP (v4+v6)
-  #   LAN0  em0     Intel I219-LM     00:d8:61:3e:2b:a9   \
-  #   LAN1  igc1    Intel I226-V      02:76:c6:00:b5:9b    \
-  #   LAN3  sfxge0  Solarflare SFC9020 00:0f:53:08:5e:5c     bridged into
-  #   LAN4  sfxge1  Solarflare SFC9020 00:0f:53:08:5e:5d     br-lan, one
-  #   LAN5  ix0     Intel X540-AT2    00:e0:ed:90:e7:17    / flat switched
-  #   LAN6  ix1     Intel X540-AT2    00:e0:ed:90:e7:18   /  LAN (was OPNsense
-  #                                                          bridge0/opt5)
+  #   WAN    04:00.0  Intel X540-AT2       0c:c4:7a:59:8a:dc   DHCP (v4+v6)
+  #   LAN0   03:00.0  Solarflare SFC9020   00:0f:53:07:99:50   \ uplink to
+  #   LAN1   03:00.1  Solarflare SFC9020   00:0f:53:07:99:51   / switch 1/2
+  #   LAN2   04:00.1  Intel X540-AT2       0c:c4:7a:59:8a:dd   \ wireless
+  #   LAN3   05:00.0  Intel X540-AT2       0c:c4:7a:59:8a:de   / AP uplinks
+  #   LAN4   05:00.1  Intel X540-AT2       0c:c4:7a:59:8a:df   \
+  #   LAN5   06:00.0  Intel X540-AT2       0c:c4:7a:59:8a:e0    > spare, up
+  #   LAN6   06:00.1  Intel X540-AT2       0c:c4:7a:59:8a:e1   /  but unused
   #
-  # OPNsense named these by BSD driver (igc0, em0, ...); Linux will enumerate
-  # them unpredictably by PCI order, so we pin stable names by MAC address
-  # via systemd .link files rather than relying on enumeration order.
+  # All MACs were read directly from the X540 boot-agent firmware config
+  # pages in BIOS setup (Advanced -> per-port "Intel(R) Ethernet Controller
+  # X540-AT2" submenus) rather than from Linux, because 5 of the 6 X540
+  # ports fail to probe under the stock kernel - see the CONFIG_PCI_IOV
+  # note in hosts/router/configuration.nix for why and the intended fix.
+  #
+  # LAN0-6 are all bridged into one flat br-lan, same as the original
+  # design - the switch uplinks, AP uplinks, and spare ports all land on
+  # the same 10.0.0.0/24 network so nothing changes from a client's
+  # perspective versus the box this replaces.
   # ---------------------------------------------------------------------
 
-  boot.kernelModules = [ "e1000e" "igc" "ixgbe" "sfc" ];
+  boot.kernelModules = [ "ixgbe" "sfc_siena" ];
   hardware.enableRedistributableFirmware = true;
 
   networking.useDHCP = false;
@@ -30,7 +55,6 @@
     "net.ipv4.ip_forward" = 1;
     "net.ipv4.conf.all.forwarding" = 1;
     "net.ipv6.conf.all.forwarding" = 1;
-    # Matches OPNsense system tunables: don't act on/leak ICMP redirects.
     "net.ipv4.conf.all.accept_redirects" = 0;
     "net.ipv4.conf.all.send_redirects" = 0;
     "net.ipv6.conf.all.accept_redirects" = 0;
@@ -38,46 +62,51 @@
 
   systemd.network.enable = true;
 
-  # --- Stable interface naming by MAC -----------------------------------
+  # irqbalance spreads the multi-queue NIC interrupt load enabled below
+  # across all 8 CPU cores instead of pinning it to CPU0.
+  services.irqbalance.enable = true;
+
+  # --- Stable interface naming by MAC, plus NIC offload -----------------
   systemd.network.links = {
     "10-wan" = {
-      matchConfig.PermanentMACAddress = "02:76:c6:00:b1:b3";
-      linkConfig.Name = "wan";
+      matchConfig.PermanentMACAddress = "0c:c4:7a:59:8a:dc";
+      linkConfig = { Name = "wan"; } // offload;
     };
     "10-lan0" = {
-      matchConfig.PermanentMACAddress = "00:d8:61:3e:2b:a9";
-      linkConfig.Name = "lan0";
+      matchConfig.PermanentMACAddress = "00:0f:53:07:99:50";
+      linkConfig = { Name = "lan0"; } // offload;
     };
     "10-lan1" = {
-      matchConfig.PermanentMACAddress = "02:76:c6:00:b5:9b";
-      linkConfig.Name = "lan1";
+      matchConfig.PermanentMACAddress = "00:0f:53:07:99:51";
+      linkConfig = { Name = "lan1"; } // offload;
+    };
+    "10-lan2" = {
+      matchConfig.PermanentMACAddress = "0c:c4:7a:59:8a:dd";
+      linkConfig = { Name = "lan2"; } // offload;
     };
     "10-lan3" = {
-      matchConfig.PermanentMACAddress = "00:0f:53:08:5e:5c";
-      linkConfig.Name = "lan3";
+      matchConfig.PermanentMACAddress = "0c:c4:7a:59:8a:de";
+      linkConfig = { Name = "lan3"; } // offload;
     };
     "10-lan4" = {
-      matchConfig.PermanentMACAddress = "00:0f:53:08:5e:5d";
-      linkConfig.Name = "lan4";
+      matchConfig.PermanentMACAddress = "0c:c4:7a:59:8a:df";
+      linkConfig = { Name = "lan4"; } // offload;
     };
     "10-lan5" = {
-      matchConfig.PermanentMACAddress = "00:e0:ed:90:e7:17";
-      linkConfig.Name = "lan5";
+      matchConfig.PermanentMACAddress = "0c:c4:7a:59:8a:e0";
+      linkConfig = { Name = "lan5"; } // offload;
     };
     "10-lan6" = {
-      matchConfig.PermanentMACAddress = "00:e0:ed:90:e7:18";
-      linkConfig.Name = "lan6";
+      matchConfig.PermanentMACAddress = "0c:c4:7a:59:8a:e1";
+      linkConfig = { Name = "lan6"; } // offload;
     };
   };
 
-  # --- br-lan bridge (replaces OPNsense's bridge0/opt5/BRIDGE0) ---------
+  # --- br-lan bridge (all 7 LAN-role ports, one flat switched network) --
   systemd.network.netdevs."20-br-lan" = {
     netdevConfig = {
       Kind = "bridge";
       Name = "br-lan";
-      # Matches bridge0's actual MAC for byte-for-byte L2 parity; harmless
-      # to drop this line if you'd rather let Linux assign one.
-      MACAddress = "58:9c:fc:00:2a:36";
     };
   };
 
@@ -89,16 +118,12 @@
         IPv6AcceptRA = true;
       };
       dhcpV4Config.UseDNS = false;
-      # OPNsense had dhcp6-ia-pd-len=0: no prefix delegation was requested,
-      # just a single WAN address - LAN-side IPv6 was not actually live, so
-      # we don't request PD here either. Plain dhcpV6Config.UseDNS=false
-      # keeps the resolver authoritative (dnsmasq), matching WAN's v4 side.
       dhcpV6Config.UseDNS = false;
       linkConfig.RequiredForOnline = "routable";
     };
 
     "40-lan-members" = {
-      matchConfig.Name = [ "lan0" "lan1" "lan3" "lan4" "lan5" "lan6" ];
+      matchConfig.Name = [ "lan0" "lan1" "lan2" "lan3" "lan4" "lan5" "lan6" ];
       networkConfig.Bridge = "br-lan";
       linkConfig.RequiredForOnline = "enslaved";
     };
@@ -110,11 +135,7 @@
         ConfigureWithoutCarrier = true;
       };
       # Static route: 10.0.1.0/24 ("Office Gateway" in OPNsense) reachable
-      # directly on the LAN segment - the OPNsense static route's "gateway"
-      # was just the bridge's own address (no real next hop), which in
-      # netstat showed up as an on-link/interface route. A destination-only
-      # route here does the same: the kernel ARPs for 10.0.1.0/24 hosts
-      # directly on br-lan.
+      # directly on the LAN segment.
       routes = [
         { Destination = "10.0.1.0/24"; }
       ];

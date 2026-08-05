@@ -6,6 +6,16 @@
   networking.firewall.enable = false;
   networking.nftables.enable = true;
 
+  # The flowtable below binds to the real "wan"/"br-lan" netdevs, which
+  # don't exist inside the Nix build sandbox - `nft -c` (NixOS's default
+  # build-time ruleset syntax check) fails trying to resolve them
+  # ("Could not process rule: No such file or directory"), a known
+  # incompatibility between nftables flowtables and static ruleset
+  # checking. Disabling the check trades that safety net away in exchange
+  # for flowtable support; double check ruleset syntax by hand (or via
+  # `nft -c` on a live system) after editing the ruleset below.
+  networking.nftables.checkRuleset = false;
+
   # OPNsense enabled blockpriv/blockbogons on WAN (drop spoofed/private
   # source addresses arriving from the internet). Strict reverse-path
   # filtering is the standard Linux equivalent.
@@ -69,40 +79,44 @@
       }
 
       chain portforwards {
+        # `dnat ip to` (not bare `dnat to`) is required here because this is
+        # a dual-stack `inet` table - nftables needs the address family
+        # disambiguated even though every target below is IPv4.
+
         # Minecraft
-        tcp dport 25565 dnat to 10.0.0.65:25565
+        tcp dport 25565 dnat ip to 10.0.0.65:25565
 
         # Mailcow
-        tcp dport 25   dnat to 10.0.0.60:25
-        tcp dport 465  dnat to 10.0.0.60:465
-        tcp dport 587  dnat to 10.0.0.60:587
-        tcp dport 143  dnat to 10.0.0.60:143
-        tcp dport 993  dnat to 10.0.0.60:993
-        tcp dport 110  dnat to 10.0.0.60:110
-        tcp dport 995  dnat to 10.0.0.60:995
-        tcp dport 4190 dnat to 10.0.0.60:4190
+        tcp dport 25   dnat ip to 10.0.0.60:25
+        tcp dport 465  dnat ip to 10.0.0.60:465
+        tcp dport 587  dnat ip to 10.0.0.60:587
+        tcp dport 143  dnat ip to 10.0.0.60:143
+        tcp dport 993  dnat ip to 10.0.0.60:993
+        tcp dport 110  dnat ip to 10.0.0.60:110
+        tcp dport 995  dnat ip to 10.0.0.60:995
+        tcp dport 4190 dnat ip to 10.0.0.60:4190
 
         # TF2
-        tcp dport 27015 dnat to 10.0.0.10:27015
-        udp dport 27015 dnat to 10.0.0.10:27015
-        udp dport 27020 dnat to 10.0.0.10:27020
-        udp dport 27005 dnat to 10.0.0.10:27005
+        tcp dport 27015 dnat ip to 10.0.0.10:27015
+        udp dport 27015 dnat ip to 10.0.0.10:27015
+        udp dport 27020 dnat ip to 10.0.0.10:27020
+        udp dport 27005 dnat ip to 10.0.0.10:27005
 
         # Web Proxy (-> jenkins host, 10.0.0.10)
-        tcp dport 443 dnat to 10.0.0.10:443
-        tcp dport 80  dnat to 10.0.0.10:80
+        tcp dport 443 dnat ip to 10.0.0.10:443
+        tcp dport 80  dnat ip to 10.0.0.10:80
 
         # NAS-01 IPMI (external 8080/8043 -> internal 80/443)
-        tcp dport 8080 dnat to 10.0.0.104:80
-        tcp dport 8043 dnat to 10.0.0.104:443
+        tcp dport 8080 dnat ip to 10.0.0.104:80
+        tcp dport 8043 dnat ip to 10.0.0.104:443
 
         # Jenkins
-        tcp dport 50000 dnat to 10.0.0.10:50000
+        tcp dport 50000 dnat ip to 10.0.0.10:50000
 
         # SSH (three separate external-port forwards, as configured)
-        tcp dport 22    dnat to 10.0.0.80:22
-        tcp dport 51413 dnat to 10.0.0.157:51413
-        tcp dport 8337  dnat to 10.0.0.10:8337
+        tcp dport 22    dnat ip to 10.0.0.80:22
+        tcp dport 51413 dnat ip to 10.0.0.157:51413
+        tcp dport 8337  dnat ip to 10.0.0.10:8337
       }
 
       chain postrouting {
@@ -115,6 +129,20 @@
     }
 
     table inet filter {
+      # Software flow offload: after a TCP/UDP flow's first packets pass
+      # the forward chain below and hit conntrack "established", later
+      # packets are handed to this flowtable and skip full ruleset +
+      # conntrack evaluation entirely. This is the standard software
+      # NAT/routing fast-path used to keep CPU load down at 10G rates -
+      # the X540/Solarflare NICs here don't support true hardware flow
+      # offload (that's a SmartNIC feature), so this is the software
+      # equivalent, paired with the NIC-level TSO/GSO/checksum offload
+      # and RSS multi-queueing configured in modules/network.nix.
+      flowtable fastpath {
+        hook ingress priority filter
+        devices = { wan, br-lan }
+      }
+
       chain input {
         type filter hook input priority 0; policy drop;
 
@@ -128,7 +156,7 @@
         iifname "tailscale0" accept
 
         icmp type echo-request accept
-        icmpv6 type { echo-request, nd-router-advertisement, nd-router-solicit, nd-neighbor-advert, nd-neighbor-solicit } accept
+        icmpv6 type { echo-request, nd-router-advert, nd-router-solicit, nd-neighbor-advert, nd-neighbor-solicit } accept
 
         # Nothing else is exposed directly on WAN (OPNsense's own admin
         # GUI on :8443 has no equivalent here - router administration is
@@ -151,6 +179,11 @@
         # Tailscale subnet-router/exit-node traffic in both directions.
         iifname "tailscale0" accept
         oifname "tailscale0" accept
+
+        # Hand established TCP/UDP flows crossing wan<->br-lan to the
+        # flowtable fast path (defined above) for the rest of their
+        # lifetime.
+        meta l4proto { tcp, udp } flow add @fastpath
       }
 
       chain output {
