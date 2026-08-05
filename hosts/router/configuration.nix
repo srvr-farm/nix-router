@@ -79,7 +79,19 @@
     lm_sensors # `sensors` - CPU/board temps via coretemp + Super I/O below
     bridge-utils # `brctl` - br-lan is also fully inspectable via `bridge`/`ip -d link`
     ipmitool # BMC sensors/SEL/power control - see hardware.ipmi.enable below
+    iperf3 # also gives the `iperf3` client binary for ad hoc tests, on top of the server below
   ];
+
+  # Throughput testing server, always on - handy for validating the NIC
+  # offload/flowtable setup in modules/network.nix and modules/firewall.nix
+  # from any LAN/Tailscale client without having to start one manually.
+  # No firewall changes needed: modules/firewall.nix's input chain already
+  # fully trusts br-lan and tailscale0; WAN never gets a rule for this
+  # port, so it stays unreachable from the internet either way.
+  services.iperf3 = {
+    enable = true;
+    bind = "10.0.0.1";
+  };
 
   # coretemp = CPU core temps. nct6775 covers the Nuvoton Super I/O chip
   # family common on Supermicro X9/X10 boards - confirmed on this board as
