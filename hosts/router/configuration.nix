@@ -7,6 +7,7 @@
     ../../modules/tailscale.nix
     ../../modules/ddns.nix
     ../../modules/ssh.nix
+    ../../modules/srvr-farm-tools.nix
   ];
 
   # --- Boot / hardware ---------------------------------------------------

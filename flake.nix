@@ -7,15 +7,25 @@
       url = "github:nix-community/disko";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Used only as the Rust toolchain for modules/srvr-farm-tools.nix - the
+    # srvr-farm tools' Cargo.lock pulls in dependencies (darling, instability,
+    # unicode-segmentation) whose MSRV (1.85-1.88) is newer than nixos-24.11's
+    # pinned rustc (1.82). Nothing else in the system uses this input, so the
+    # rest of the router stays on the already-validated 24.11 pin.
+    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
   };
 
-  outputs = { self, nixpkgs, disko, ... }:
+  outputs = { self, nixpkgs, nixpkgs-unstable, disko, ... }:
     let
       system = "x86_64-linux";
+      pkgs = nixpkgs.legacyPackages.${system};
+      unstablePkgs = nixpkgs-unstable.legacyPackages.${system};
+      srvrFarmTools = import ./pkgs/srvr-farm-tools.nix { inherit pkgs unstablePkgs; };
     in
     {
       nixosConfigurations.router = nixpkgs.lib.nixosSystem {
         inherit system;
+        specialArgs = { inherit nixpkgs-unstable; };
         modules = [
           disko.nixosModules.disko
           ./hosts/router/disko.nix
@@ -51,6 +61,6 @@
         # real disk. See MIGRATION.md's cutover runbook for the secrets-embedding
         # invocation and the post-dd partition-growing step.
         diskoImage = self.nixosConfigurations.router.config.system.build.diskoImagesScript;
-      };
+      } // srvrFarmTools;
     };
 }
