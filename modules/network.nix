@@ -7,10 +7,25 @@ let
   # of this in hardware - this is the offload story on generic 10G NICs
   # (there's no SmartNIC-style hardware NAT offload available here); the
   # software side of the story is the nftables flowtable in firewall.nix.
+  #
+  # LargeReceiveOffload is deliberately OFF (and applied here as an
+  # explicit `false`, not just an omission) despite being applied to every
+  # other *Offload knob: LRO irreversibly merges received TCP segments in
+  # the NIC before the stack ever sees individual packet boundaries, which
+  # is only safe for frames that stay local. Every interface here is
+  # either the WAN side of IP forwarding or a br-lan bridge member -
+  # i.e. none of them ever just locally consume what they receive - so
+  # LRO corrupts/reorders forwarded traffic instead of speeding it up.
+  # Confirmed as the cause of a real slow-internet report (2026-08-05):
+  # WAN showed 802 out-of-order segments and a collapsed TCP cwnd on an
+  # otherwise 100%-idle router. GRO (the forwarding-safe equivalent -
+  # NIC-batched but stack-visible per-packet, and properly resegmented via
+  # GSO on the way back out) stays on by default at the kernel level
+  # without needing to be listed here, so this costs nothing CPU-wise.
   offload = {
     TCPSegmentationOffload = true;
     GenericSegmentationOffload = true;
-    LargeReceiveOffload = true;
+    LargeReceiveOffload = false;
     ReceiveChecksumOffload = true;
     TransmitChecksumOffload = true;
     CombinedChannels = 8;
