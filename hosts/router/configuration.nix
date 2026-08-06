@@ -9,6 +9,7 @@
     ../../modules/ssh.nix
     ../../modules/srvr-farm-tools.nix
     ../../modules/monitoring.nix
+    ../../modules/dhcp-tools.nix
   ];
 
   # --- Boot / hardware ---------------------------------------------------

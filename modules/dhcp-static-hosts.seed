@@ -1,0 +1,63 @@
+# Static DHCP reservations for the router's dnsmasq (dhcp-hostsfile).
+#
+# Format: one reservation per line, "MAC,hostname[,IP]" (no IP just pins
+# the hostname/DNS name for a device without reserving a fixed address -
+# see the printer below). A comment line ('#...') directly above an entry,
+# with no blank line between them, is treated as that entry's note by
+# scripts/dhcp-static.sh; a blank line breaks that association. dnsmasq
+# itself ignores blank lines and comment lines outright.
+#
+# This file only seeds /var/lib/dnsmasq/static-hosts.conf the FIRST time
+# the router boots with that file missing (systemd.tmpfiles 'C' rule in
+# modules/dhcp-dns.nix only copies when the destination doesn't already
+# exist) - so it's the baseline restored on a full reimage, not a live
+# mirror of the router's current reservations. Manage the live file with
+# scripts/dhcp-static.sh (installed on the router itself) instead of
+# editing it directly - that tool handles conflict checks and reloading
+# dnsmasq for you. If you want this seed to reflect reservations added
+# that way, copy /var/lib/dnsmasq/static-hosts.conf back into this file
+# by hand and redeploy.
+#
+# Carried over from OPNsense's opt5 dhcpd staticmaps during the original
+# migration to this router - see git history of this file for that
+# context.
+
+# HP LaserJet Printer - no static IP in source config either
+18:47:3d:eb:d8:65,NPI04B2F6
+70:3a:cb:4e:87:72,wifi,10.0.0.2
+# Omada WiFi AP 1
+20:36:26:d7:c5:60,ap-01,10.0.0.3
+# Management NIC on com-01
+0c:c4:7a:06:80:ac,com-01,10.0.0.4
+# Omada WiFi AP 2
+20:36:26:d6:5f:60,ap-02,10.0.0.5
+f4:52:14:8c:5b:90,ws-01,10.0.0.6
+# Management NIC for ws-01
+00:02:c9:50:0d:f4,ws-01-m,10.0.0.7
+# Bastion
+9c:7b:ef:bc:2b:42,bastion-01,10.0.0.8
+50:eb:71:76:1e:43,ws-02,10.0.0.9
+58:47:ca:7a:b3:9a,nas-02,10.0.0.10
+5a:cc:06:34:5d:e7,nas-02-1,10.0.0.11
+58:47:ca:7a:b3:9c,nas-02-2,10.0.0.12
+# com-01 backup management port
+0c:c4:7a:06:80:ad,com-01-m2,10.0.0.14
+# Home Assistant
+52:54:00:b5:06:12,ha,10.0.0.20
+00:25:90:f5:6c:ff,com-02,10.0.0.40
+# nas-02 wireless connection
+c4:8b:66:54:99:b1,nas-02-wifi,10.0.0.50
+# source config also calls this host "ws-01" (dup of 10.0.0.6); renamed to avoid a dnsmasq hostname clash
+34:97:f6:32:74:30,ws-01-b,10.0.0.80
+# Piano Workstation
+c8:3a:35:c0:39:d8,ws-19,10.0.0.81
+
+# Leon's Desktop - in the original OPNsense source config this was *also*
+# statically mapped to 10.0.0.81, colliding with ws-19 above (one IP, two
+# MACs - not replicable as-is). Resolved by moving it to its own IP here.
+98:8d:46:92:d5:51,ws-12,10.0.0.91
+
+# Dmitri's Computer
+4c:82:a9:93:66:b9,ws-09,10.0.0.82
+# Pixel 9 Pro
+9e:71:5b:6b:d9:08,px-01,10.0.0.90
