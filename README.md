@@ -22,10 +22,15 @@ modules/
   tailscale.nix          # subnet router + exit node
   ddns.nix                # Cloudflare dynamic DNS
   ssh.nix                  # root + mark users, passwordless sudo for mark
+  monitoring.nix            # netdata dashboard
+  srvr-farm-tools.nix        # cpuwatch/memwatch/interfaces/diskwatch (nixpkgs-unstable toolchain)
+  dhcp-tools.nix             # on-router CLI: dhcp-static, dhcp-leases, lan-hosts, dns-failover
+  pihole.nix                  # Pi-hole container (Podman/macvlan) + DHCP cutover
 secrets/
-  ddclient.conf              # real Cloudflare tokens (gitignored)
-  ddclient.conf.example      # safe-to-commit template
-  tailscale-authkey.example  # instructions, not a real key
+  ddclient.conf                     # real Cloudflare tokens (gitignored)
+  ddclient.conf.example             # safe-to-commit template
+  tailscale-authkey.example         # instructions, not a real key
+  pihole-webpassword.env.example    # instructions, not a real password
 ```
 
 Currently targets a Supermicro X10SLH-N6-ST031 (`mcallan@10.0.0.129`) -

@@ -161,7 +161,17 @@
         # reverse zone to dnsmasq. Traffic merely ROUTED via this
         # interface as a gateway (not addressed to 10.0.0.254 itself)
         # hits the forward chain instead - see below.
-        iifname "pihole-shim" accept
+        #
+        # `ip saddr 10.0.0.53` is explicit defense-in-depth, not strictly
+        # required for correctness: strict rp_filter (set above) already
+        # narrows this in practice to just 10.0.0.53, the only address
+        # with a return route via pihole-shim (modules/network.nix). But
+        # that's an emergent property of rp_filter, not something this
+        # ruleset states - if rp_filter were ever relaxed, this rule
+        # would silently start accepting from any spoofed source arriving
+        # on pihole-shim. Pinning the source address here makes the
+        # intent explicit instead of relying on rp_filter alone.
+        iifname "pihole-shim" ip saddr 10.0.0.53 accept
 
         icmp type echo-request accept
         icmpv6 type { echo-request, nd-router-advert, nd-router-solicit, nd-neighbor-advert, nd-neighbor-solicit } accept
@@ -191,7 +201,9 @@
         # 10.0.0.254 itself (that case is the input chain rule above).
         # Return traffic is already covered by the unconditional
         # `ct state established,related accept` earlier in this chain.
-        iifname "pihole-shim" accept
+        # `ip saddr 10.0.0.53` here is the same explicit defense-in-depth
+        # as the input chain rule above - see that comment for why.
+        iifname "pihole-shim" ip saddr 10.0.0.53 accept
 
         # Tailscale subnet-router/exit-node traffic in both directions.
         iifname "tailscale0" accept

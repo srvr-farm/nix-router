@@ -60,7 +60,12 @@ require_root() {
 
 current_ip() {
   [ -f "$DNS_SERVER_CONF" ] || { echo ""; return; }
-  grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' "$DNS_SERVER_CONF" | head -n1
+  # `|| true` on the pipeline, not just the grep: under
+  # writeShellApplication's errexit+pipefail, a config file that exists
+  # but is empty/corrupted (no IP match) makes grep exit nonzero, which
+  # would otherwise abort the whole script here instead of falling
+  # through to the "no DNS server configured yet" branch in cmd_status.
+  grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' "$DNS_SERVER_CONF" | head -n1 || true
 }
 
 cmd_status() {
@@ -74,10 +79,19 @@ cmd_status() {
 }
 
 set_ip() {
-  local ip="$1" who="$2"
+  local ip="$1" who="$2" tmp
   require_root "$who"
-  printf 'dhcp-option=option:dns-server,%s\n' "$ip" > "$DNS_SERVER_CONF"
-  chmod 0644 "$DNS_SERVER_CONF"
+  # Write to a temp file and mv into place (atomic replace), rather than
+  # writing the live config directly with `>` - matches
+  # scripts/dhcp-static.sh's discipline for the same reason: a mid-write
+  # crash/power-loss with direct `>` could leave the file truncated,
+  # whereas mv is atomic. (Failure mode here is benign either way -
+  # dnsmasq just sees no dns-server option and doesn't advertise one -
+  # but this is a small, cheap change to match the established pattern.)
+  tmp="$(mktemp "${DNS_SERVER_CONF}.XXXXXX")"
+  printf 'dhcp-option=option:dns-server,%s\n' "$ip" > "$tmp"
+  chmod 0644 "$tmp"
+  mv "$tmp" "$DNS_SERVER_CONF"
   systemctl restart dnsmasq
   echo "Now handing out: $ip"
 }

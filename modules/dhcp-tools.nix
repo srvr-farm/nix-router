@@ -1,6 +1,6 @@
 { pkgs, ... }:
 let
-  # Shared PATH for all three tools: gawk (TSV parsing), util-linux (flock
+  # Shared PATH for all four tools: gawk (TSV parsing), util-linux (flock
   # for safe concurrent edits, column for table output), plus the usual
   # coreutils/grep/sed and systemctl (dnsmasq reload, reading its live
   # ExecStart to find the active conf file).

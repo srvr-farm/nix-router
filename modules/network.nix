@@ -206,9 +206,24 @@ in
       linkConfig.RequiredForOnline = "routable";
     };
 
-    "35-pihole-shim" = {
+    # Ordinal is deliberately after "50-br-lan" (not before, despite the
+    # netdev itself being "25-pihole-shim") - see the /32 note below for
+    # why this network block must not install a second /24 route.
+    "55-pihole-shim" = {
       matchConfig.Name = "pihole-shim";
-      address = [ "10.0.0.254/24" ];
+      # /32, not /24: a /32 still lets this interface send/receive on the
+      # L2 segment and be assigned 10.0.0.254, but it does NOT install a
+      # second connected route for 10.0.0.0/24 - br-lan's "50-br-lan"
+      # network block already installs that one. Two undifferentiated
+      # /24 connected routes for the same prefix is a routing footgun:
+      # today br-lan's wins (confirmed live), but which one wins is
+      # decided by kernel/networkd route-add ordering, not anything
+      # pinned here - accidental, not deliberate. A /32 here removes the
+      # ambiguity outright rather than relying on ordering to keep
+      # working. The container's own explicit 10.0.0.53/32 route below is
+      # unrelated/unaffected - that's a separate, more-specific route
+      # entry regardless of this interface's own prefix length.
+      address = [ "10.0.0.254/32" ];
       networkConfig.ConfigureWithoutCarrier = true;
       # Not "routable" - this is an auxiliary side-channel interface,
       # not something the box's basic connectivity depends on; it

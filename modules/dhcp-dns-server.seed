@@ -1,1 +1,19 @@
+# Seeds /var/lib/dnsmasq/dns-server.conf the FIRST time the router boots
+# with that file missing (systemd.tmpfiles 'C' rule in modules/dhcp-dns.nix
+# only copies when the destination doesn't already exist) - i.e. the
+# baseline restored on a full reimage. This deliberately seeds Pi-hole
+# (10.0.0.53), the steady-state post-cutover value, not dnsmasq's own
+# 10.0.0.1 - see scripts/dns-failover.sh.
+#
+# Cold-start gap this creates: on a genuinely fresh reimage, the Pi-hole
+# container image (~500MB) still has to be pulled before Pi-hole is
+# actually answering DNS on 10.0.0.53 - any DHCP client that grabs a
+# lease in that window keeps a dead resolver for up to 12h (the lease
+# time). Low-frequency (only a fresh reimage, not normal operation/
+# reboots, since the image is already pulled after that), so this is
+# documented rather than architecturally solved. If LAN DNS seems dead
+# right after a fresh install, run `sudo dns-failover bypass` on the
+# router for the immediate fix (falls back to dnsmasq itself, unfiltered)
+# and switch back to `dns-failover pihole` once the image has finished
+# pulling.
 dhcp-option=option:dns-server,10.0.0.53

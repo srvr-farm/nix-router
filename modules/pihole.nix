@@ -13,11 +13,17 @@ in
   # Pi-hole gets its own MAC/IP on br-lan via macvlan, rather than host
   # networking, so it can bind :53 without colliding with dnsmasq's own
   # :53 on 10.0.0.1 - each has its own IP, no port conflict possible.
-  # This does mean the router's own network namespace generally can't
-  # reach 10.0.0.53 directly (a well-known macvlan-bridge-mode
-  # limitation - only other LAN hosts can) - not a problem here, since
-  # the router's own local DNS resolution (networking.nameservers)
-  # stays pointed at dnsmasq, not Pi-hole.
+  # macvlan bridge-mode isolates a child from its own parent device's IP
+  # stack in general (a well-known limitation - only other LAN hosts, not
+  # the router itself, can normally reach a macvlan child on the same
+  # parent). That's no longer strictly true here, though: modules/network.nix's
+  # pihole-shim interface adds a specifically-routed /32 exception just
+  # for 10.0.0.53, so the router CAN reach the Pi-hole container directly
+  # over that one route - scripts/dns-failover.sh's `pihole` subcommand
+  # depends on exactly this, probing 10.0.0.53:53 from the router's own
+  # shell. Ordinary macvlan parent-child traffic for any other address
+  # remains isolated as usual; this is a deliberate, narrow carve-out, not
+  # a change to the general macvlan behavior.
   systemd.services.podman-network-pihole = {
     description = "Create the macvlan network the Pi-hole container attaches to";
     after = [ "network-online.target" "systemd-networkd.service" ];
@@ -77,6 +83,11 @@ in
         server=/0.0.10.in-addr.arpa/10.0.0.254
       '';
     };
+    # Holds the real admin-UI password (FTLCONF_webserver_api_password).
+    # Kept out of the Nix store entirely, same reasoning/pattern as
+    # modules/ddns.nix's ddclient.conf: deploy the real file to
+    # /etc/pihole-webpassword.env by hand (mode 0600, root-owned) rather
+    # than through the Nix store. See secrets/pihole-webpassword.env.example.
     environmentFiles = [ "/etc/pihole-webpassword.env" ];
     volumes = [ "/var/lib/pihole/etc-pihole:/etc/pihole" ];
     extraOptions = [
@@ -85,6 +96,26 @@ in
       "--mac-address=02:00:00:00:00:53"
     ];
   };
+
+  # Pi-hole is now the LAN's DNS server (DHCP hands out 10.0.0.53, see
+  # modules/dhcp-dns.nix's dns-server.conf) - as LAN-critical as dnsmasq
+  # itself, so it gets the same "retry forever" treatment established in
+  # modules/dhcp-dns.nix for the same reason. Two distinct gaps closed here:
+  #  - podman-pihole.service (created by virtualisation.oci-containers
+  #    above) already has Restart=always as NixOS's oci-containers module
+  #    default, but no startLimitIntervalSec=0 - without it, systemd's
+  #    defaults (DefaultStartLimitBurst=5 within
+  #    DefaultStartLimitIntervalSec=10s) stop restarting it for good after
+  #    5 failures in a 10s window.
+  #  - podman-network-pihole.service (the oneshot above) has no Restart=
+  #    at all, and it's a hard requiredBy/before dependency of
+  #    podman-pihole.service - if it ever fails once (e.g. br-lan isn't
+  #    fully up yet at boot), podman-pihole fails as a *dependency*
+  #    failure, which podman-pihole's own Restart= does NOT recover from.
+  #    Restart=on-failure here lets the network unit itself retry.
+  systemd.services.podman-pihole.startLimitIntervalSec = 0;
+  systemd.services.podman-network-pihole.serviceConfig.Restart = "on-failure";
+  systemd.services.podman-network-pihole.serviceConfig.RestartSec = 5;
 
   environment.systemPackages = [
     (pkgs.writeShellApplication {

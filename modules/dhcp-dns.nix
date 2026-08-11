@@ -17,6 +17,18 @@
       domain = "callan.local";
       expand-hosts = true;
       domain-needed = true;
+      # domain-needed only suppresses forwarding unqualified *forward*
+      # lookups upstream - it does nothing for PTR (reverse) lookups.
+      # Pi-hole PTRs every client IP it sees to populate its dashboard
+      # with device names; without bogus-priv, any 10.0.0.x PTR dnsmasq
+      # can't answer locally (i.e. isn't a known host) gets forwarded to
+      # the public upstream resolvers below, continuously leaking this
+      # LAN's internal address/device structure. bogus-priv makes dnsmasq
+      # answer "no such name" itself for unresolvable RFC1918 PTRs
+      # instead of forwarding them - known-good PTRs (any host dnsmasq
+      # already knows about) are unaffected, since it answers those
+      # locally either way.
+      bogus-priv = true;
 
       dhcp-range = [ "10.0.0.100,10.0.0.200,12h" ];
       dhcp-option = [
@@ -91,6 +103,25 @@
       Restart = lib.mkForce "always";
       RestartSec = 5;
     };
+    # dnsmasq's "interface" list above includes pihole-shim with
+    # bind-interfaces = true - with bind-interfaces, dnsmasq refuses to
+    # start at all if a listed interface doesn't exist yet. pihole-shim
+    # (modules/network.nix) has RequiredForOnline = "no", so nothing
+    # otherwise guarantees it exists before dnsmasq starts (this already
+    # caused one transient race, self-healed by Restart=always above).
+    # The scarier case is scripts/dns-failover.sh's `bypass` command,
+    # the emergency "get LAN DNS working right now" escape hatch, which
+    # works by restarting dnsmasq - if pihole-shim were ever genuinely
+    # absent (not just late), dnsmasq couldn't start at all, and the
+    # emergency recovery path would fail in exactly the scenario it
+    # exists for. This ordering dependency makes dnsmasq wait for the
+    # pihole-shim device unit specifically, without touching
+    # bind-interfaces semantics for any interface (br-lan/tailscale0
+    # already work fine today, so leave their behavior alone). Unit name
+    # confirmed live: `systemctl list-units | grep pihole-shim` shows
+    # "sys-subsystem-net-devices-pihole\x2dshim.device".
+    after = [ "sys-subsystem-net-devices-pihole\\x2dshim.device" ];
+    wants = [ "sys-subsystem-net-devices-pihole\\x2dshim.device" ];
   };
 
   # Seed the dhcp-hostsfile referenced above from the checked-in baseline,
