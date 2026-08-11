@@ -10,6 +10,7 @@
     ../../modules/srvr-farm-tools.nix
     ../../modules/monitoring.nix
     ../../modules/dhcp-tools.nix
+    ../../modules/pihole.nix
   ];
 
   # --- Boot / hardware ---------------------------------------------------
