@@ -10,3 +10,4 @@ api-key
 # router itself; never commit the filled-in versions.
 secrets/ddclient.conf
 secrets/tailscale-authkey
+secrets/pihole-webpassword.env
