@@ -32,11 +32,18 @@ let
     runtimeInputs = runtimeInputs ++ [ dhcpStatic ];
     text = builtins.readFile ../scripts/lan-hosts.sh;
   };
+
+  dnsFailover = pkgs.writeShellApplication {
+    name = "dns-failover";
+    inherit runtimeInputs;
+    text = builtins.readFile ../scripts/dns-failover.sh;
+  };
 in
 {
   environment.systemPackages = [
     dhcpStatic
     dhcpLeases
     lanHosts
+    dnsFailover
   ];
 }

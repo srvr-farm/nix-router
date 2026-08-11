@@ -85,4 +85,12 @@ in
       "--mac-address=02:00:00:00:00:53"
     ];
   };
+
+  environment.systemPackages = [
+    (pkgs.writeShellApplication {
+      name = "pihole-toggle";
+      runtimeInputs = [ pkgs.podman ];
+      text = builtins.readFile ../scripts/pihole-toggle.sh;
+    })
+  ];
 }
