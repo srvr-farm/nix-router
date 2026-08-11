@@ -152,6 +152,25 @@ in
     };
   };
 
+  # Host-side macvlan interface, same parent (br-lan) as the Pi-hole
+  # container's own macvlan network (modules/pihole.nix) - lets the
+  # container reach something running on the router itself. macvlan
+  # bridge-mode isolates a child from its own parent device's IP stack
+  # in BOTH directions (confirmed via live testing during Task 2 - the
+  # router can't reach 10.0.0.53 directly, and the container can't
+  # reach 10.0.0.1 directly either) - but macvlan SIBLINGS on the same
+  # parent CAN reach each other. This interface is that sibling:
+  # dnsmasq listens on its address too (modules/dhcp-dns.nix), and it's
+  # what the Pi-hole container uses as its gateway/conditional-
+  # forwarding target instead of 10.0.0.1.
+  systemd.network.netdevs."25-pihole-shim" = {
+    netdevConfig = {
+      Kind = "macvlan";
+      Name = "pihole-shim";
+    };
+    macvlanConfig.Mode = "bridge";
+  };
+
   systemd.network.networks = {
     "30-wan" = {
       matchConfig.Name = "wan";
@@ -175,6 +194,9 @@ in
       address = [ "10.0.0.1/24" ];
       networkConfig = {
         ConfigureWithoutCarrier = true;
+        # Binds pihole-shim (defined above) to this interface as its
+        # parent.
+        MACVLAN = [ "pihole-shim" ];
       };
       # Static route: 10.0.1.0/24 ("Office Gateway" in OPNsense) reachable
       # directly on the LAN segment.
@@ -182,6 +204,34 @@ in
         { Destination = "10.0.1.0/24"; }
       ];
       linkConfig.RequiredForOnline = "routable";
+    };
+
+    "35-pihole-shim" = {
+      matchConfig.Name = "pihole-shim";
+      address = [ "10.0.0.254/24" ];
+      networkConfig.ConfigureWithoutCarrier = true;
+      # Not "routable" - this is an auxiliary side-channel interface,
+      # not something the box's basic connectivity depends on; it
+      # shouldn't be able to block systemd-networkd-wait-online.
+      linkConfig.RequiredForOnline = "no";
+      # Host route for the Pi-hole container's own address, more specific
+      # than br-lan's own connected 10.0.0.0/24 route. Without this, any
+      # packet the router sends to 10.0.0.53 - dnsmasq's own replies to
+      # the container's conditional-forwarding queries, and NAT return
+      # traffic for the container's own upstream DNS queries alike - gets
+      # a routing-table lookup that resolves to br-lan (same-cost/first
+      # connected route to that /24) instead of pihole-shim, since both
+      # interfaces share the 10.0.0.0/24 subnet. That silently defeats
+      # the whole point of the shim: br-lan is the macvlan *parent*,
+      # which can't reach the container any more than 10.0.0.1 could
+      # before this fix. Confirmed live via `ip route get 10.0.0.53`
+      # resolving to `dev br-lan` pre-fix, and DNS working end-to-end
+      # once this /32 route was in place (task-2b-report.md). Longest-
+      # prefix-match makes this override br-lan's /24 for just this one
+      # address, without touching routing for any other LAN host.
+      routes = [
+        { Destination = "10.0.0.53/32"; }
+      ];
     };
   };
 }

@@ -33,11 +33,21 @@ in
       RemainAfterExit = true;
     };
     script = ''
-      podman network exists ${piholeNet} || \
+      current_gw=$(podman network inspect ${piholeNet} --format '{{range .Subnets}}{{.Gateway}}{{end}}' 2>/dev/null || true)
+      if [ "$current_gw" != "10.0.0.254" ]; then
+        # A container attached to this network blocks removing it -
+        # explicitly remove it first. It'll be recreated by
+        # podman-pihole.service's own pre-start, which already does
+        # this unconditionally on every start regardless (this is
+        # NixOS's oci-containers module's own standard behavior, not
+        # something added here).
+        podman rm -f pihole 2>/dev/null || true
+        podman network rm -f ${piholeNet} 2>/dev/null || true
         podman network create -d macvlan \
           -o parent=${lanIface} \
-          --subnet=10.0.0.0/24 --gateway=10.0.0.1 \
+          --subnet=10.0.0.0/24 --gateway=10.0.0.254 \
           ${piholeNet}
+      fi
     '';
   };
 
@@ -62,9 +72,9 @@ in
       # syntax - FTL is dnsmasq-derived and understands it directly via
       # this env var, no mounted conf file needed.
       FTLCONF_misc_dnsmasq_lines = ''
-        server=/callan.local/10.0.0.1
-        server=/srvr.farm/10.0.0.1
-        server=/0.0.10.in-addr.arpa/10.0.0.1
+        server=/callan.local/10.0.0.254
+        server=/srvr.farm/10.0.0.254
+        server=/0.0.10.in-addr.arpa/10.0.0.254
       '';
     };
     environmentFiles = [ "/etc/pihole-webpassword.env" ];

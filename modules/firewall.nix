@@ -155,6 +155,14 @@
         iifname "br-lan" accept
         iifname "tailscale0" accept
 
+        # pihole-shim: DNS queries from the Pi-hole container arriving
+        # addressed directly to this router (10.0.0.254) - e.g. its
+        # conditional-forwarding queries for callan.local/srvr.farm/the
+        # reverse zone to dnsmasq. Traffic merely ROUTED via this
+        # interface as a gateway (not addressed to 10.0.0.254 itself)
+        # hits the forward chain instead - see below.
+        iifname "pihole-shim" accept
+
         icmp type echo-request accept
         icmpv6 type { echo-request, nd-router-advert, nd-router-solicit, nd-neighbor-advert, nd-neighbor-solicit } accept
 
@@ -175,6 +183,15 @@
         # LAN can reach anything (WAN, Tailscale) - matches the "Any
         # Internal"/LAN_GROUP allow-all floating rules.
         iifname "br-lan" accept
+
+        # pihole-shim: lets the Pi-hole container's own internet-bound
+        # traffic (upstream DNS resolution, gravity blocklist download)
+        # get routed out via wan - this is traffic merely using
+        # 10.0.0.254 as its next-hop gateway, not addressed to
+        # 10.0.0.254 itself (that case is the input chain rule above).
+        # Return traffic is already covered by the unconditional
+        # `ct state established,related accept` earlier in this chain.
+        iifname "pihole-shim" accept
 
         # Tailscale subnet-router/exit-node traffic in both directions.
         iifname "tailscale0" accept

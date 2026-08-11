@@ -10,7 +10,7 @@
   services.dnsmasq = {
     enable = true;
     settings = {
-      interface = [ "br-lan" "tailscale0" ];
+      interface = [ "br-lan" "tailscale0" "pihole-shim" ];
       bind-interfaces = true;
       except-interface = "wan";
 
