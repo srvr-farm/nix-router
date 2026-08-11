@@ -1,0 +1,1 @@
+dhcp-option=option:dns-server,10.0.0.1

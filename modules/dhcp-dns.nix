@@ -21,7 +21,6 @@
       dhcp-range = [ "10.0.0.100,10.0.0.200,12h" ];
       dhcp-option = [
         "option:router,10.0.0.1"
-        "option:dns-server,10.0.0.1"
       ];
 
       # Upstream resolvers (same set OPNsense had configured system-wide).
@@ -40,6 +39,23 @@
       # reimage) - it also carries the migration history/notes that used
       # to live in this comment block.
       dhcp-hostsfile = "/var/lib/dnsmasq/static-hosts.conf";
+
+      # --- DHCP-advertised DNS server, in its own runtime-mutable file --
+      # so scripts/dns-failover.sh (installed on the router via
+      # modules/dhcp-tools.nix) can flip it between Pi-hole and a direct/
+      # unfiltered fallback without a redeploy. Unlike dhcp-hostsfile
+      # above, dhcp-option values are NOT re-read on SIGHUP - only a
+      # full restart picks up a change here (that's what dns-failover
+      # does). /etc/dnsmasq-conf.conf is the dnsmasq module's own
+      # default conf-file (part of its networking.resolvconf
+      # integration - unrelated to this, but must stay); mkForce'd
+      # explicitly alongside our own entry rather than relying on
+      # uncertain list-merge behavior between our definition and the
+      # module's lib.mkDefault one.
+      conf-file = lib.mkForce [
+        "/etc/dnsmasq-conf.conf"
+        "/var/lib/dnsmasq/dns-server.conf"
+      ];
 
       # --- Split-horizon overrides for *.srvr.farm, carried over from
       #     Unbound's host overrides ------------------------------------
@@ -87,5 +103,6 @@
   systemd.tmpfiles.rules = [
     "d /var/lib/dnsmasq 0755 dnsmasq dnsmasq -"
     "C /var/lib/dnsmasq/static-hosts.conf 0644 dnsmasq dnsmasq - ${./dhcp-static-hosts.seed}"
+    "C /var/lib/dnsmasq/dns-server.conf 0644 dnsmasq dnsmasq - ${./dhcp-dns-server.seed}"
   ];
 }
