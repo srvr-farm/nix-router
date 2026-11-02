@@ -84,7 +84,7 @@
         # disambiguated even though every target below is IPv4.
 
         # Minecraft
-        tcp dport 25565 dnat ip to 10.0.0.65:25565
+        tcp dport 25565 dnat ip to 10.0.0.64:25565
 
         # Mailcow
         tcp dport 25   dnat ip to 10.0.0.60:25
